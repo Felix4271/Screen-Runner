@@ -188,6 +188,5 @@ void app_main()
     scrn_init(spi);
     //Initialize the effect displayed
     display_such_a_complicated_pattern(spi);
-    fflush(stdout);
 }
 
