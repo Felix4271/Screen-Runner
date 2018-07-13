@@ -59,7 +59,7 @@ void scrn_data(spi_device_handle_t spi, const uint8_t *data, int len)
     memset(&t, 0, sizeof(t));       //Zero out the transaction
     t.length=len*8;                 //Len is in bytes, transaction length is in bits.
     t.tx_buffer=data;               //Data
-    t.user=(void*)1;                //D/C needs to be set to 1
+    t.user=(void*)0;                //D/C needs to be set to 1
     ret=spi_device_transmit(spi, &t);  //Transmit!
     assert(ret==ESP_OK);            //Should have had no issues.
 }
@@ -156,7 +156,7 @@ static void display_such_a_complicated_pattern(spi_device_handle_t spi)
             }
         }
         send_lines(spi, lines);
-        vTaskDelay(3000/portTICK_PERIOD_MS);
+        vTaskDelay(1000/portTICK_PERIOD_MS);
     }
 }
 
@@ -188,5 +188,6 @@ void app_main()
     scrn_init(spi);
     //Initialize the effect displayed
     display_such_a_complicated_pattern(spi);
+    fflush(stdout);
 }
 
