@@ -114,7 +114,6 @@ static void send_lines(spi_device_handle_t spi, uint8_t *linedata)
         trans[i].user=(void*)0;
         trans[i].flags=SPI_TRANS_USE_TXDATA;
         trans[i].tx_data[0]=0xB0+(i/2);         //memory write
-        printf("%u",trans[i].tx_data[0]);
         trans[i].tx_data[1]=0x02;
         trans[i].tx_data[2]=0x10;
         trans[i+1].length=1024;
@@ -189,9 +188,5 @@ void app_main()
     scrn_init(spi);
     //Initialize the effect displayed
     display_such_a_complicated_pattern(spi);
-
-    vTaskDelay(1000 / portTICK_RATE_MS);
-
-    fflush(stdout);
 }
 
