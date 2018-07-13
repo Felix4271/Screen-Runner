@@ -127,6 +127,8 @@ static void send_lines(spi_device_handle_t spi, uint8_t *linedata)
     for (int i=0;i<16;i+=1) {
         ret=spi_device_queue_trans(spi, &trans[i], portMAX_DELAY);
         assert(ret==ESP_OK);
+    }
+    for (int i=0;i<16;i++) {
         ret=spi_device_get_trans_result(spi, &rtrans, portMAX_DELAY);
         assert(ret==ESP_OK);
     }
@@ -136,27 +138,53 @@ static void send_lines(spi_device_handle_t spi, uint8_t *linedata)
     //send_line_finish, which will wait for the transfers to be done and check their status.
 }
 
-static void display_such_a_complicated_pattern(spi_device_handle_t spi)
+void set_pixel(uint8_t x, uint8_t y, uint8_t value, uint8_t *lines) {
+    if (value) {
+        lines[x+128*(y/8)] = (1<<(y%8))|lines[x+y/8];
+    } else {
+        lines[x+128*(y/8)] = (~(1<<(y%8)))&lines[x+y/8];
+    }
+}
+
+static void display_such_a_complicated_pattern(spi_device_handle_t spi, uint8_t *lines)
 {
-    uint8_t *lines;
+    
     //Allocate memory for the pixel buffers
-    lines=heap_caps_malloc(1024*sizeof(uint8_t), MALLOC_CAP_DMA);
-    assert(lines!=NULL);
-    bool on=false;
+    bool on = true;
 
     while (1) {
-        on = !on;
+        //on = !on;
         if (on) {
             for (int i=0;i<1024;i++) {
-                lines[i] = 255;
+                lines[i] = 0xFF;
             }
         } else {
             for (int i=0;i<1024;i++) {
-                lines[i] = 0;
+                lines[i] = 0x00;
             }
         }
+        for (int i = 0;i<128;i++) {
+            set_pixel(i, i/2, !on, lines);
+        }
+        //for (int i = 0;i<128;i++) {
+        //    set_pixel(127-i, i/2, !on, lines);
+        //}
+        set_pixel(113, 7, 0, lines);
+        set_pixel(112, 8, 0, lines);
         send_lines(spi, lines);
         vTaskDelay(1000/portTICK_PERIOD_MS);
+        /*
+        for (int j=0;j<9;j++) {
+            for (int i=0;i<1024;i++) {
+                if ((i%128)%9==j) {
+                    lines[i] = 0xFF;
+                } else {
+                    lines[i] = 0x00;
+                }
+            }
+            send_lines(spi, lines);
+            vTaskDelay(30/portTICK_PERIOD_MS);
+        }*/
     }
 }
 
@@ -172,12 +200,15 @@ void app_main()
         .max_transfer_sz=256
     };
     spi_device_interface_config_t devcfg={
-        .clock_speed_hz= 1000000,
+        .clock_speed_hz= 20000000,
         .mode=0,                                //SPI mode 0
         .spics_io_num=CS_PIN,                   //CS pin
-        .queue_size=7,                          //We want to be able to queue 7 transactions at a time
+        .queue_size=17,                          //We want to be able to queue 17 transactions at a time
         .pre_cb=scrn_spi_pre_transfer_callback, //Specify pre-transfer callback to handle D/C line
     };
+    uint8_t *lines;
+    lines=heap_caps_malloc(1024*sizeof(uint8_t), MALLOC_CAP_DMA);
+    assert(lines!=NULL);
     //Initialize the SPI bus
     ret=spi_bus_initialize(HSPI_HOST, &buscfg, 1);
     ESP_ERROR_CHECK(ret);
@@ -187,6 +218,6 @@ void app_main()
     //Initialize the scrn
     scrn_init(spi);
     //Initialize the effect displayed
-    display_such_a_complicated_pattern(spi);
+    display_such_a_complicated_pattern(spi, lines);
 }
 
