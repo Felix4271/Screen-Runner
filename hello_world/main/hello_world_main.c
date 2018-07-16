@@ -79,6 +79,7 @@ void scrn_init(spi_device_handle_t spi)
     //Initialize non-SPI GPIOs
     gpio_set_direction(DC_PIN, GPIO_MODE_OUTPUT);
     gpio_set_direction(RST_PIN, GPIO_MODE_OUTPUT);
+    gpio_set_direction(2, GPIO_MODE_OUTPUT);
 
     //Reset the display
     gpio_set_level(RST_PIN, 0);
@@ -142,7 +143,7 @@ void set_pixel(uint8_t x, uint8_t y, uint8_t value, uint8_t *lines) {
 }
 
 bool get_pixel(uint8_t x, uint8_t y, uint8_t *lines) {
-    return lines[x+128*(y/8)]&(1<<y%8);
+    return lines[x+128*(y/8)]&(1<<(y%8));
 }
 
 void set_rect(uint8_t x, uint8_t y, uint8_t width, uint8_t height, uint8_t *lines) {
@@ -158,11 +159,52 @@ void set_rect(uint8_t x, uint8_t y, uint8_t width, uint8_t height, uint8_t *line
     }
 }
 
+uint8_t count_neighbourghs(uint8_t x, uint8_t y, uint8_t *lines){
+    uint8_t sets[8][2] = {{x-1, y-1}, {x, y-1}, {x+1, y-1}, {x-1, y}, {x+1, y}, {x-1, y+1}, {x, y+1}, {x+1, y+1}};
+    uint8_t a=0;
+    for (int i=0;i<8;i++) {
+        sets[i][0]%=128;
+        sets[i][1]%=64;
+        a += get_pixel(sets[i][0], sets[i][1], lines);
+    }
+    return a;
+}
+
+void display_game_of_life(spi_device_handle_t spi, uint8_t *lines[2]) {
+    uint8_t adress = 0;
+    set_pixel(50, 50, 1, lines[adress]);
+    set_pixel(51, 51, 1, lines[adress]);
+    set_pixel(52, 49, 1, lines[adress]);
+    set_pixel(52, 50, 1, lines[adress]);
+    set_pixel(52, 51, 1, lines[adress]);
+    while (1) {
+        gpio_set_level(2, 1);
+        for (int i=0;i<128;i++) {
+            for (int j=0;j<64;j++) {
+                set_pixel(i, j, 0, lines[1-adress]);
+                uint8_t b = count_neighbourghs(i, j, lines[adress]);
+                if (get_pixel(i, j, lines[adress])) {
+                    if (b<2||b>3) {
+                        set_pixel(i, j, 0, lines[1-adress]);
+                    } else {
+                        set_pixel(i, j, 1, lines[1-adress]);
+                    }
+                } else {
+                    if (b==3) {
+                        set_pixel(i, j, 1, lines[1-adress]);
+                    }
+                }
+            }
+        }
+        send_lines(spi, lines[1-adress]);
+        adress = 1-adress;
+        gpio_set_level(2, 0);
+        vTaskDelay(30/portTICK_PERIOD_MS);
+    }
+}
+
 static void display_such_a_complicated_pattern(spi_device_handle_t spi, uint8_t *lines)
 {
-    for (int i=0;i<1024;i++) {
-        lines[i] = 0xFF;
-    }
     while (1) {
         for (int i = 0;i<128;i++) {
             for (int j=0;j<64;j++) {
@@ -193,9 +235,11 @@ void app_main()
         .queue_size=17,                          //We want to be able to queue 17 transactions at a time
         .pre_cb=scrn_spi_pre_transfer_callback //Specify pre-transfer callback to handle D/C line
     };
-    uint8_t *lines;
-    lines=heap_caps_malloc(1024*sizeof(uint8_t), MALLOC_CAP_DMA);
-    assert(lines!=NULL);
+    uint8_t *lines[2];
+    lines[0]=heap_caps_malloc(1024*sizeof(uint8_t), MALLOC_CAP_DMA);
+    assert(lines[0]!=NULL);
+    lines[1]=heap_caps_malloc(1024*sizeof(uint8_t), MALLOC_CAP_DMA);
+    assert(lines[1]!=NULL);
     //Initialize the SPI bus
     ret=spi_bus_initialize(HSPI_HOST, &buscfg, 1);
     ESP_ERROR_CHECK(ret);
@@ -204,6 +248,11 @@ void app_main()
     ESP_ERROR_CHECK(ret);
     //Initialize the scrn
     scrn_init(spi);
+    for (int i=0;i<2;i++) {
+        for (int j=0;j<1024;j++) {
+            lines[i][j] = 0x00;
+        }
+    }
     //Initialize the effect displayed
-    display_such_a_complicated_pattern(spi, lines);
+    display_game_of_life(spi, lines);
 }
