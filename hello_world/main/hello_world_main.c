@@ -13,6 +13,12 @@
 #define RST_PIN 23
 #define CS_PIN 15
 #define DC_PIN 22
+#define U_PIN 16
+#define L_PIN 17
+#define D_PIN 18
+#define R_PIN 19
+#define C_PIN 5
+#define MODE_PIN 2
 
 typedef struct {
     uint8_t cmd;
@@ -79,8 +85,13 @@ void scrn_init(spi_device_handle_t spi)
     //Initialize non-SPI GPIOs
     gpio_set_direction(DC_PIN, GPIO_MODE_OUTPUT);
     gpio_set_direction(RST_PIN, GPIO_MODE_OUTPUT);
-    gpio_set_direction(2, GPIO_MODE_OUTPUT);
-
+    gpio_set_direction(MODE_PIN, GPIO_MODE_INPUT);
+    gpio_set_direction(U_PIN, GPIO_MODE_INPUT);
+    gpio_set_direction(L_PIN, GPIO_MODE_INPUT);
+    gpio_set_direction(D_PIN, GPIO_MODE_INPUT);
+    gpio_set_direction(R_PIN, GPIO_MODE_INPUT);
+    gpio_set_direction(C_PIN, GPIO_MODE_INPUT);
+    gpio_set_pull_mode(MODE_PIN, GPIO_PULLUP_ONLY);
     //Reset the display
     gpio_set_level(RST_PIN, 0);
     vTaskDelay(100 / portTICK_RATE_MS);
@@ -95,19 +106,10 @@ void scrn_init(spi_device_handle_t spi)
     }
 }
 
-//To send a set of lines we have to send a command, 2 data bytes, another command, 2 more data bytes and another command
-//before sending the line data itself; a total of 6 transactions. (We can't put all of this in just one transaction
-//because the D/C line needs to be toggled in the middle.)
-//This routine queues these commands up so they get sent as quickly as possible.
 static void send_lines(spi_device_handle_t spi, uint8_t *linedata)
 {
     esp_err_t ret;
-    //Transaction descriptors. Declared static so they're not allocated on the stack; we need this memory even when this
-    //function is finished because the SPI driver needs access to it even while we're already calculating the next line.
     static spi_transaction_t trans[16];
-
-    //In theory, it's better to initialize trans and data only once and hang on to the initialized
-    //variables. We allocate them on the stack, so we need to re-init them each call.
 
     memset(&trans, 0, sizeof(spi_transaction_t));
     for (int i=0;i<16;i+=2) {
@@ -171,35 +173,152 @@ uint8_t count_neighbourghs(uint8_t x, uint8_t y, uint8_t *lines){
 }
 
 void display_game_of_life(spi_device_handle_t spi, uint8_t *lines[2]) {
-    uint8_t adress = 0;
+    bool adress = 0;                         //Records which memory buffer is being used for what
+    uint8_t cursor[] = {49, 49};             //Records position of cursor in edit mode
+    bool mode = 0;                           //Play mode or Edit mode
+    //These three variables let the cursor flash
+    bool cursor_on = 0;                      //Records state
+    uint8_t cursor_switch_counter = 0;       //Switches state every 7 loops
+    bool cursor_state = 0;                   //Remebers the state of the pixel before the cursor got there
+    bool mode_reverted = true;               //Remembers whether cursor_state needs to be reset (after running, it may have changed)
+    //These five allow commands to be recieved with little repitition
+    bool prev_state[] = {0, 0, 0, 0, 0};
+    bool new_state[5];
+    uint8_t changed;
+    uint8_t counters[] = {0, 0, 0, 0, 0};
+    uint8_t pins[] = {U_PIN, L_PIN, D_PIN, R_PIN, C_PIN};
+    /*
+    //Draws a glider
     set_pixel(50, 50, 1, lines[adress]);
     set_pixel(51, 51, 1, lines[adress]);
     set_pixel(52, 49, 1, lines[adress]);
     set_pixel(52, 50, 1, lines[adress]);
-    set_pixel(52, 51, 1, lines[adress]);
+    set_pixel(52, 51, 1, lines[adress]);*/
+    //Draws a glider gun
+    set_pixel(50, 50, 1, lines[adress]);
+    set_pixel(50, 51, 1, lines[adress]);
+    set_pixel(51, 50, 1, lines[adress]);
+    set_pixel(51, 51, 1, lines[adress]);
+    set_pixel(60, 50, 1, lines[adress]);
+    set_pixel(60, 51, 1, lines[adress]);
+    set_pixel(60, 52, 1, lines[adress]);
+    set_pixel(61, 49, 1, lines[adress]);
+    set_pixel(61, 53, 1, lines[adress]);
+    set_pixel(62, 48, 1, lines[adress]);
+    set_pixel(62, 54, 1, lines[adress]);
+    set_pixel(63, 48, 1, lines[adress]);
+    set_pixel(63, 54, 1, lines[adress]);
+    set_pixel(64, 51, 1, lines[adress]);
+    set_pixel(65, 49, 1, lines[adress]);
+    set_pixel(65, 53, 1, lines[adress]);
+    set_pixel(66, 50, 1, lines[adress]);
+    set_pixel(66, 51, 1, lines[adress]);
+    set_pixel(66, 52, 1, lines[adress]);
+    set_pixel(67, 51, 1, lines[adress]);
+    set_pixel(70, 48, 1, lines[adress]);
+    set_pixel(70, 49, 1, lines[adress]);
+    set_pixel(70, 50, 1, lines[adress]);
+    set_pixel(71, 48, 1, lines[adress]);
+    set_pixel(71, 49, 1, lines[adress]);
+    set_pixel(71, 50, 1, lines[adress]);
+    set_pixel(72, 47, 1, lines[adress]);
+    set_pixel(72, 51, 1, lines[adress]);
+    set_pixel(74, 46, 1, lines[adress]);
+    set_pixel(74, 47, 1, lines[adress]);
+    set_pixel(74, 51, 1, lines[adress]);
+    set_pixel(74, 52, 1, lines[adress]);
+    set_pixel(84, 48, 1, lines[adress]);
+    set_pixel(84, 49, 1, lines[adress]);
+    set_pixel(85, 48, 1, lines[adress]);
+    set_pixel(85, 49, 1, lines[adress]);
+
     while (1) {
-        gpio_set_level(2, 1);
-        for (int i=0;i<128;i++) {
-            for (int j=0;j<64;j++) {
-                set_pixel(i, j, 0, lines[1-adress]);
-                uint8_t b = count_neighbourghs(i, j, lines[adress]);
-                if (get_pixel(i, j, lines[adress])) {
-                    if (b<2||b>3) {
-                        set_pixel(i, j, 0, lines[1-adress]);
+        if (mode) {
+            set_pixel(cursor[0], cursor[1], cursor_state, lines[adress]);
+            for (int i=0;i<128;i++) {
+                for (int j=0;j<64;j++) {
+                    set_pixel(i, j, 0, lines[1-adress]);
+                    uint8_t b = count_neighbourghs(i, j, lines[adress]);
+                    if (get_pixel(i, j, lines[adress])) {
+                        if (b<2||b>3) {
+                            set_pixel(i, j, 0, lines[1-adress]);
+                        } else {
+                            set_pixel(i, j, 1, lines[1-adress]);
+                        }
                     } else {
-                        set_pixel(i, j, 1, lines[1-adress]);
-                    }
-                } else {
-                    if (b==3) {
-                        set_pixel(i, j, 1, lines[1-adress]);
+                        if (b==3) {
+                            set_pixel(i, j, 1, lines[1-adress]);
+                        }
                     }
                 }
             }
+            adress = 1-adress;
+            mode_reverted = true;
+        } else {
+            if (mode_reverted) {
+                mode_reverted = false;
+                cursor_state = get_pixel(cursor[0], cursor[1], lines[adress]);
+            }
+            cursor_switch_counter+=1;
+            cursor_switch_counter%=16;
+            if (!cursor_switch_counter) {
+                cursor_on = !cursor_on;
+            }
+            changed=13;
+            for (int i=0;i<4;i++) {
+                new_state[i] = gpio_get_level(pins[i]);
+                if (new_state[i]) {
+                    if (prev_state[i]) {
+                        counters[i] += 1;
+                        if (counters[i] > 15) {
+                            counters[i] = 12;
+                            changed = i;
+                        }
+                    } else {
+                        counters[i] = 0;
+                        changed = i;
+                    }
+                }
+                prev_state[i]=new_state[i];
+            }
+            new_state[4] = gpio_get_level(pins[4]);
+            if (new_state[4]&&!prev_state[4]) {
+                changed = 4;
+                counters[4] = 0;
+            }
+            prev_state[4]=new_state[4];
+            if (changed != 13) {
+                if (changed != 4) {
+                    set_pixel(cursor[0], cursor[1], cursor_state, lines[adress]);
+                }
+                if (changed == 0) {
+                    cursor[1]--;
+                } else if (changed == 1) {
+                    cursor[0]--;
+                } else if (changed == 2) {
+                    cursor[1]++;
+                } else if (changed == 3) {
+                    cursor[0]++;
+                } else if (changed == 4) {
+                    set_pixel(cursor[0], cursor[1], !cursor_state, lines[adress]);
+                }
+                cursor[0] %= 128;
+                cursor[1] %= 64;
+                cursor_state = get_pixel(cursor[0], cursor[1], lines[adress]);
+            }
+            set_pixel(cursor[0], cursor[1], cursor_on, lines[adress]);
         }
-        send_lines(spi, lines[1-adress]);
-        adress = 1-adress;
-        gpio_set_level(2, 0);
         vTaskDelay(30/portTICK_PERIOD_MS);
+        send_lines(spi, lines[adress]);
+        bool current_mode = mode;
+        if (gpio_get_level(MODE_PIN)==0) {
+            for (int i=0;i<3;i++) {
+                vTaskDelay(30/portTICK_PERIOD_MS);
+                if (gpio_get_level(MODE_PIN)==0) {
+                    mode = !current_mode;
+                }
+            }
+        }
     }
 }
 
