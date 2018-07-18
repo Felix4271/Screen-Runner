@@ -187,51 +187,15 @@ void display_game_of_life(spi_device_handle_t spi, uint8_t *lines[2]) {
     uint8_t changed;
     uint8_t counters[] = {0, 0, 0, 0, 0};
     uint8_t pins[] = {U_PIN, L_PIN, D_PIN, R_PIN, C_PIN};
-    /*
-    //Draws a glider
-    set_pixel(50, 50, 1, lines[adress]);
-    set_pixel(51, 51, 1, lines[adress]);
-    set_pixel(52, 49, 1, lines[adress]);
-    set_pixel(52, 50, 1, lines[adress]);
-    set_pixel(52, 51, 1, lines[adress]);*/
-    //Draws a glider gun
-    set_pixel(50, 50, 1, lines[adress]);
-    set_pixel(50, 51, 1, lines[adress]);
-    set_pixel(51, 50, 1, lines[adress]);
-    set_pixel(51, 51, 1, lines[adress]);
-    set_pixel(60, 50, 1, lines[adress]);
-    set_pixel(60, 51, 1, lines[adress]);
-    set_pixel(60, 52, 1, lines[adress]);
-    set_pixel(61, 49, 1, lines[adress]);
-    set_pixel(61, 53, 1, lines[adress]);
-    set_pixel(62, 48, 1, lines[adress]);
-    set_pixel(62, 54, 1, lines[adress]);
-    set_pixel(63, 48, 1, lines[adress]);
-    set_pixel(63, 54, 1, lines[adress]);
-    set_pixel(64, 51, 1, lines[adress]);
-    set_pixel(65, 49, 1, lines[adress]);
-    set_pixel(65, 53, 1, lines[adress]);
-    set_pixel(66, 50, 1, lines[adress]);
-    set_pixel(66, 51, 1, lines[adress]);
-    set_pixel(66, 52, 1, lines[adress]);
-    set_pixel(67, 51, 1, lines[adress]);
-    set_pixel(70, 48, 1, lines[adress]);
-    set_pixel(70, 49, 1, lines[adress]);
-    set_pixel(70, 50, 1, lines[adress]);
-    set_pixel(71, 48, 1, lines[adress]);
-    set_pixel(71, 49, 1, lines[adress]);
-    set_pixel(71, 50, 1, lines[adress]);
-    set_pixel(72, 47, 1, lines[adress]);
-    set_pixel(72, 51, 1, lines[adress]);
-    set_pixel(74, 46, 1, lines[adress]);
-    set_pixel(74, 47, 1, lines[adress]);
-    set_pixel(74, 51, 1, lines[adress]);
-    set_pixel(74, 52, 1, lines[adress]);
-    set_pixel(84, 48, 1, lines[adress]);
-    set_pixel(84, 49, 1, lines[adress]);
-    set_pixel(85, 48, 1, lines[adress]);
-    set_pixel(85, 49, 1, lines[adress]);
-
+    uint8_t glider[] = {50, 50, 51, 51, 52, 49, 52, 50, 52, 51};
+    uint8_t glider_gun[] = {50, 50, 50, 51, 51, 50, 51, 51, 60, 50, 60, 51, 60, 52, 
+            61, 49, 61, 53, 62, 48, 62, 54, 63, 48, 63, 54, 64, 51, 65, 49, 65, 53, 
+            66, 50, 66, 51, 66, 52, 67, 51, 70, 48, 70, 49, 70, 50, 71, 48, 71, 49,
+            71, 50, 72, 47, 72, 51, 74, 46, 74, 47, 74, 51, 74, 52, 84, 48, 84, 49,
+            85, 48, 85, 49};
+    for (int i=0;i<72;i+=2) {
+        set_pixel(glider_gun[0], glider_gun[1], 1, lines[adress]);
+    }
     while (1) {
         if (mode) {
             set_pixel(cursor[0], cursor[1], cursor_state, lines[adress]);
@@ -322,6 +286,35 @@ void display_game_of_life(spi_device_handle_t spi, uint8_t *lines[2]) {
     }
 }
 
+void display_langtons_ant(spi_device_handle_t spi, uint8_t *lines) {
+    uint8_t position[] = {64, 32};
+    uint8_t direction = 1;
+    bool a;
+    while (gpio_get_level(MODE_PIN)==1) {
+        a = get_pixel(position[0], position[1], lines);
+        if (a) {
+            direction++;
+        } else {
+            direction--;
+        }
+        set_pixel(position[0], position[1], !a, lines);
+        direction%=4;
+        if (direction == 0) {
+            position[0]+=1;
+        } else if (direction == 1) {
+            position[1]+=1;
+        } else if (direction == 2) {
+            position[0]-=1;
+        } else {
+            position[1]-=1;
+        }
+        position[0]%=128;
+        position[1]%=64;
+        send_lines(spi, lines);
+        vTaskDelay(8/portTICK_PERIOD_MS);
+    }
+}
+
 static void display_such_a_complicated_pattern(spi_device_handle_t spi, uint8_t *lines)
 {
     while (1) {
@@ -373,5 +366,5 @@ void app_main()
         }
     }
     //Initialize the effect displayed
-    display_game_of_life(spi, lines);
+    display_langtons_ant(spi, lines[0]);
 }
